@@ -1,0 +1,36 @@
+<IgbDialog Open="@Open" CloseOnOutsideClick="false">
+    <div slot="title">Confirm Delete</div>
+
+    <div class="confirm-message">
+        Are you sure you want to delete ticket
+        <span class="confirm-ticket-id">@TicketId</span>?
+        <br />
+        <small>This action cannot be undone.</small>
+    </div>
+
+    <div slot="footer" class="dialog-footer">
+        <IgbButton Variant="ButtonVariant.Flat" @onclick="Cancel">Cancel</IgbButton>
+        <IgbButton Variant="ButtonVariant.Contained" @onclick="ConfirmAsync"
+                   style="--background: #dc2626; --hover-background: #b91c1c;">
+            Delete
+        </IgbButton>
+    </div>
+</IgbDialog>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public string TicketId { get; set; } = "";
+    [Parameter] public EventCallback OnConfirmed { get; set; }
+
+    private async Task ConfirmAsync()
+    {
+        await OnConfirmed.InvokeAsync();
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private async Task Cancel()
+    {
+        await OpenChanged.InvokeAsync(false);
+    }
+}

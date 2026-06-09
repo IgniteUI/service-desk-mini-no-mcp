@@ -1,0 +1,405 @@
+@page "/tickets"
+@inject TicketService TicketSvc
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Tickets — Service Desk Mini</PageTitle>
+
+<!-- Toast Notification -->
+@if (_showToast)
+{
+    <div class="app-toast @_toastClass">
+        <span class="toast-icon">@_toastIcon</span>
+        <span>@_toastMessage</span>
+    </div>
+}
+
+<!-- Page Header -->
+<div class="page-header">
+    <h1 class="page-title">🎫 Tickets</h1>
+    <p class="page-subtitle">Manage and track all support tickets</p>
+</div>
+
+<!-- Toolbar: Filters + Actions -->
+<div class="tickets-toolbar">
+    <div class="toolbar-filters">
+        <IgbInput
+            class="search-input"
+            Placeholder="Search tickets…"
+            Value="@_searchText"
+            ValueChanged="@OnSearchChanged">
+            <IgbIcon slot="prefix" name="search" collection="material"></IgbIcon>
+        </IgbInput>
+
+        <IgbSelect
+            class="filter-select"
+            Label="Status"
+            @bind-Value="_filterStatus"
+            Change="@OnStatusFilterChanged">
+            <IgbSelectItem Value="All">All Statuses</IgbSelectItem>
+            @foreach (var s in TicketStatuses.All)
+            {
+                <IgbSelectItem Value="@s">@s</IgbSelectItem>
+            }
+        </IgbSelect>
+
+        <IgbSelect
+            class="filter-select"
+            Label="Priority"
+            @bind-Value="_filterPriority"
+            Change="@OnPriorityFilterChanged">
+            <IgbSelectItem Value="All">All Priorities</IgbSelectItem>
+            @foreach (var p in TicketPriorities.All)
+            {
+                <IgbSelectItem Value="@p">@p</IgbSelectItem>
+            }
+        </IgbSelect>
+
+        <IgbSelect
+            class="filter-select"
+            Label="Assignee"
+            @bind-Value="_filterAssignee"
+            Change="@OnAssigneeFilterChanged">
+            <IgbSelectItem Value="All">All Assignees</IgbSelectItem>
+            @foreach (var m in TeamMembers.All)
+            {
+                <IgbSelectItem Value="@m">@m</IgbSelectItem>
+            }
+        </IgbSelect>
+    </div>
+
+    <div class="toolbar-actions">
+        <IgbButton Variant="ButtonVariant.Outlined" @onclick="ClearFilters">
+            Clear Filters
+        </IgbButton>
+        <IgbButton Variant="ButtonVariant.Contained" @onclick="OpenAddDialog">
+            <IgbIcon slot="prefix" name="add" collection="material"></IgbIcon>
+            Add Ticket
+        </IgbButton>
+    </div>
+</div>
+
+<!-- Ticket Count -->
+<div style="margin-bottom: 8px; font-size: 0.85rem; color: var(--app-text-secondary); padding: 0 4px;">
+    Showing @_displayTickets.Count of @_allTickets.Count tickets
+</div>
+
+<!-- Grid -->
+@if (_loading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <span>Loading tickets…</span>
+    </div>
+}
+else if (_displayTickets.Count == 0)
+{
+    <div class="empty-state" style="background: var(--app-surface); border-radius: 12px; border: 1px solid var(--app-border); padding: 60px 24px;">
+        <span class="empty-icon">🔍</span>
+        No tickets match your current filters.<br />
+        <IgbButton Variant="ButtonVariant.Flat" @onclick="ClearFilters" style="margin-top: 12px;">Clear filters</IgbButton>
+    </div>
+}
+else
+{
+    <div class="grid-container">
+        <IgbGrid Data="@_displayTickets" AutoGenerate="false" DisplayDensity="DisplayDensity.Comfortable"
+                 PrimaryKey="Id">
+            <IgbColumn Field="Id" Header="ID" Width="110px" Sortable="true" Filterable="false"></IgbColumn>
+            <IgbColumn Field="Title" Header="Title" Width="220px" Sortable="true" Filterable="false"></IgbColumn>
+            <IgbColumn Field="Customer" Header="Customer" Width="150px" Sortable="true" Filterable="false"></IgbColumn>
+            <IgbColumn Field="Assignee" Header="Assignee" Width="150px" Sortable="true" Filterable="false"></IgbColumn>
+            <IgbColumn Field="Priority" Header="Priority" Width="120px" Sortable="true" Filterable="false"
+                       BodyTemplateScript="priorityCellTemplate"></IgbColumn>
+            <IgbColumn Field="Status" Header="Status" Width="140px" Sortable="true" Filterable="false"
+                       BodyTemplateScript="statusCellTemplate"></IgbColumn>
+            <IgbColumn Field="CreatedDateDisplay" Header="Created" Width="120px" Sortable="false" Filterable="false"></IgbColumn>
+            <IgbColumn Field="DueDateDisplay" Header="Due Date" Width="120px" Sortable="false" Filterable="false"></IgbColumn>
+            <IgbColumn Header="Actions" Width="120px" Filterable="false" Sortable="false"
+                       BodyTemplateScript="rowActionsTemplate"></IgbColumn>
+            <IgbPaginator PerPage="10"></IgbPaginator>
+        </IgbGrid>
+    </div>
+}
+
+<!-- Add / Edit Dialog -->
+<TicketFormDialog
+    @bind-Open="_showFormDialog"
+    EditTicket="@_editTicket"
+    OnSaved="@OnTicketSaved">
+</TicketFormDialog>
+
+<!-- Confirm Delete Dialog -->
+<ConfirmDialog
+    @bind-Open="_showConfirmDialog"
+    TicketId="@_deleteTicketId"
+    OnConfirmed="@DeleteConfirmedAsync">
+</ConfirmDialog>
+
+<!-- View Ticket Dialog -->
+<IgbDialog Open="@_showViewDialog" CloseOnOutsideClick="true">
+    <div slot="title">Ticket Details: @_viewTicket?.Id</div>
+
+    @if (_viewTicket != null)
+    {
+        <div class="ticket-detail">
+            <div class="detail-row">
+                <div class="detail-field">
+                    <span class="detail-label">Title</span>
+                    <span class="detail-value">@_viewTicket.Title</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label">Customer</span>
+                    <span class="detail-value">@_viewTicket.Customer</span>
+                </div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-field">
+                    <span class="detail-label">Status</span>
+                    <span class="status-badge status-@_viewTicket.Status.ToLower().Replace(" ", "")">
+                        @_viewTicket.Status
+                    </span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label">Priority</span>
+                    <span class="priority-badge priority-@_viewTicket.Priority.ToLower()">
+                        @_viewTicket.Priority
+                    </span>
+                </div>
+            </div>
+            <div class="detail-row">
+                <div class="detail-field">
+                    <span class="detail-label">Assignee</span>
+                    <span class="detail-value">@_viewTicket.Assignee</span>
+                </div>
+                <div class="detail-field">
+                    <span class="detail-label">Created / Due</span>
+                    <span class="detail-value">
+                        @_viewTicket.CreatedDateDisplay → @_viewTicket.DueDateDisplay
+                        @if (_viewTicket.IsOverdue)
+                        {
+                            <span style="color: #dc2626; margin-left: 6px; font-size: 0.8rem;">(Overdue)</span>
+                        }
+                    </span>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_viewTicket.Description))
+            {
+                <div class="detail-field">
+                    <span class="detail-label">Description</span>
+                    <div class="detail-description">@_viewTicket.Description</div>
+                </div>
+            }
+        </div>
+    }
+
+    <div slot="footer" class="dialog-footer">
+        <IgbButton Variant="ButtonVariant.Flat" @onclick="@(() => _showViewDialog = false)">Close</IgbButton>
+        <IgbButton Variant="ButtonVariant.Outlined" @onclick="@(() => { _showViewDialog = false; if (_viewTicket != null) { _editTicket = _viewTicket; _showFormDialog = true; } })">
+            Edit Ticket
+        </IgbButton>
+    </div>
+</IgbDialog>
+
+@code {
+    // ─── State ───────────────────────────────────────────────────────────────
+    private bool _loading = true;
+    private List<Ticket> _allTickets = new();
+    private List<Ticket> _displayTickets = new();
+
+    // Filters
+    private string _searchText = "";
+    private string _filterStatus = "All";
+    private string _filterPriority = "All";
+    private string _filterAssignee = "All";
+
+    // Dialogs
+    private bool _showFormDialog = false;
+    private bool _showConfirmDialog = false;
+    private bool _showViewDialog = false;
+    private Ticket? _editTicket = null;
+    private Ticket? _viewTicket = null;
+    private string _deleteTicketId = "";
+
+    // Toast
+    private bool _showToast = false;
+    private string _toastMessage = "";
+    private string _toastClass = "toast-info";
+    private string _toastIcon = "ℹ️";
+    private CancellationTokenSource? _toastCts;
+
+    // DotNet reference for grid JS callbacks
+    private DotNetObjectReference<Tickets>? _dotNetRef;
+
+    // ─── Lifecycle ───────────────────────────────────────────────────────────
+    protected override async Task OnInitializedAsync()
+    {
+        await TicketSvc.EnsureInitializedAsync();
+        TicketSvc.OnTicketsChanged += OnTicketsChanged;
+        LoadTickets();
+        _loading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("setTicketsPageRef", _dotNetRef);
+        }
+    }
+
+    public void Dispose()
+    {
+        TicketSvc.OnTicketsChanged -= OnTicketsChanged;
+        JS.InvokeVoidAsync("clearTicketsPageRef");
+        _dotNetRef?.Dispose();
+        _toastCts?.Dispose();
+    }
+
+    // ─── Data Loading ─────────────────────────────────────────────────────────
+    private void LoadTickets()
+    {
+        _allTickets = TicketSvc.GetAll();
+        ApplyFilters();
+    }
+
+    private void OnTicketsChanged()
+    {
+        LoadTickets();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyFilters()
+    {
+        _displayTickets = _allTickets
+            .Where(t =>
+                (string.IsNullOrEmpty(_searchText) ||
+                 t.Id.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                 t.Title.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                 t.Customer.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                 t.Assignee.Contains(_searchText, StringComparison.OrdinalIgnoreCase)) &&
+                (_filterStatus == "All" || t.Status == _filterStatus) &&
+                (_filterPriority == "All" || t.Priority == _filterPriority) &&
+                (_filterAssignee == "All" || t.Assignee == _filterAssignee))
+            .ToList();
+    }
+
+    // ─── Filter event handlers ────────────────────────────────────────────────
+    private void OnSearchChanged(string value)
+    {
+        _searchText = value;
+        ApplyFilters();
+        StateHasChanged();
+    }
+
+    private void OnStatusFilterChanged(IgbSelectItemComponentEventArgs e)
+    {
+        ApplyFilters();
+        StateHasChanged();
+    }
+
+    private void OnPriorityFilterChanged(IgbSelectItemComponentEventArgs e)
+    {
+        ApplyFilters();
+        StateHasChanged();
+    }
+
+    private void OnAssigneeFilterChanged(IgbSelectItemComponentEventArgs e)
+    {
+        ApplyFilters();
+        StateHasChanged();
+    }
+
+    private void ClearFilters()
+    {
+        _searchText = "";
+        _filterStatus = "All";
+        _filterPriority = "All";
+        _filterAssignee = "All";
+        ApplyFilters();
+        StateHasChanged();
+    }
+
+    // ─── Dialog openers ───────────────────────────────────────────────────────
+    private void OpenAddDialog()
+    {
+        _editTicket = null;
+        _showFormDialog = true;
+    }
+
+    // ─── JSInvokable row action callbacks ─────────────────────────────────────
+    [JSInvokable]
+    public void ViewTicket(string id)
+    {
+        _viewTicket = TicketSvc.GetById(id);
+        _showViewDialog = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void EditTicket(string id)
+    {
+        _editTicket = TicketSvc.GetById(id);
+        _showFormDialog = true;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void DeleteTicket(string id)
+    {
+        _deleteTicketId = id;
+        _showConfirmDialog = true;
+        StateHasChanged();
+    }
+
+    // ─── Ticket CRUD ──────────────────────────────────────────────────────────
+    private async Task OnTicketSaved(Ticket ticket)
+    {
+        if (string.IsNullOrEmpty(ticket.Id))
+        {
+            await TicketSvc.AddAsync(ticket);
+            await ShowToastAsync("✅ Ticket created successfully", "toast-success", "✅");
+        }
+        else
+        {
+            await TicketSvc.UpdateAsync(ticket);
+            await ShowToastAsync("✏️ Ticket updated successfully", "toast-info", "✏️");
+        }
+        LoadTickets();
+        StateHasChanged();
+    }
+
+    private async Task DeleteConfirmedAsync()
+    {
+        if (!string.IsNullOrEmpty(_deleteTicketId))
+        {
+            await TicketSvc.DeleteAsync(_deleteTicketId);
+            await ShowToastAsync($"🗑 Ticket {_deleteTicketId} deleted", "toast-error", "🗑");
+            _deleteTicketId = "";
+            LoadTickets();
+            StateHasChanged();
+        }
+    }
+
+    // ─── Toast ────────────────────────────────────────────────────────────────
+    private async Task ShowToastAsync(string message, string cssClass = "toast-info", string icon = "ℹ️")
+    {
+        _toastCts?.Cancel();
+        _toastCts = new CancellationTokenSource();
+
+        _toastMessage = message;
+        _toastClass = cssClass;
+        _toastIcon = icon;
+        _showToast = true;
+        StateHasChanged();
+
+        try
+        {
+            await Task.Delay(3500, _toastCts.Token);
+            _showToast = false;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException) { /* replaced by a newer toast */ }
+    }
+}

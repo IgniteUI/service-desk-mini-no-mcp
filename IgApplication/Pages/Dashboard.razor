@@ -1,0 +1,207 @@
+@page "/"
+@inject TicketService TicketSvc
+@implements IDisposable
+
+<PageTitle>Dashboard — Service Desk Mini</PageTitle>
+
+@if (_loading)
+{
+    <div class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <span>Loading dashboard…</span>
+    </div>
+}
+else
+{
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">📊 Dashboard</h1>
+        <p class="page-subtitle">Overview of all support tickets and team performance</p>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+        <div class="kpi-card kpi-total">
+            <div class="kpi-inner">
+                <div>
+                    <div class="kpi-value">@_total</div>
+                    <div class="kpi-label">Total Tickets</div>
+                </div>
+                <div class="kpi-icon-wrapper">🎫</div>
+            </div>
+        </div>
+        <div class="kpi-card kpi-open">
+            <div class="kpi-inner">
+                <div>
+                    <div class="kpi-value">@_open</div>
+                    <div class="kpi-label">Open Tickets</div>
+                </div>
+                <div class="kpi-icon-wrapper">📂</div>
+            </div>
+        </div>
+        <div class="kpi-card kpi-high">
+            <div class="kpi-inner">
+                <div>
+                    <div class="kpi-value">@_highPriority</div>
+                    <div class="kpi-label">High / Critical</div>
+                </div>
+                <div class="kpi-icon-wrapper">🔥</div>
+            </div>
+        </div>
+        <div class="kpi-card kpi-resolved">
+            <div class="kpi-inner">
+                <div>
+                    <div class="kpi-value">@_resolved</div>
+                    <div class="kpi-label">Resolved</div>
+                </div>
+                <div class="kpi-icon-wrapper">✅</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="charts-row">
+        <div class="chart-card">
+            <h3 class="chart-title">📈 Tickets by Status</h3>
+            <IgbCategoryChart
+                Data="@_statusChartData"
+                ChartType="CategoryChartType.Column"
+                Height="260px"
+                YAxisMinimumValue="0"
+                IsHorizontalZoomEnabled="false"
+                IsVerticalZoomEnabled="false">
+            </IgbCategoryChart>
+        </div>
+        <div class="chart-card">
+            <h3 class="chart-title">🎯 Tickets by Priority</h3>
+            <IgbCategoryChart
+                Data="@_priorityChartData"
+                ChartType="CategoryChartType.Column"
+                Height="260px"
+                YAxisMinimumValue="0"
+                IsHorizontalZoomEnabled="false"
+                IsVerticalZoomEnabled="false">
+            </IgbCategoryChart>
+        </div>
+    </div>
+
+    <!-- Bottom Row: Recent Tickets + Needs Attention -->
+    <div class="dashboard-bottom">
+        <!-- Recent Tickets Grid -->
+        <div class="section-card">
+            <h3 class="section-title">🕐 Recent Tickets</h3>
+            @if (_recentTickets.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="empty-icon">📭</span>
+                    No tickets found.
+                </div>
+            }
+            else
+            {
+                <div class="grid-container">
+                    <IgbGrid Data="@_recentTickets" AutoGenerate="false" Height="300px" DisplayDensity="DisplayDensity.Comfortable">
+                        <IgbColumn Field="Id" Header="ID" Width="110px" Sortable="true"></IgbColumn>
+                        <IgbColumn Field="Title" Header="Title" Width="220px" Sortable="true"></IgbColumn>
+                        <IgbColumn Field="Customer" Header="Customer" Width="140px" Sortable="true"></IgbColumn>
+                        <IgbColumn Field="Status" Header="Status" Width="130px" Sortable="true" BodyTemplateScript="statusCellTemplate"></IgbColumn>
+                        <IgbColumn Field="Priority" Header="Priority" Width="110px" Sortable="true" BodyTemplateScript="priorityCellTemplate"></IgbColumn>
+                        <IgbColumn Field="Assignee" Header="Assignee" Width="150px" Sortable="true"></IgbColumn>
+                    </IgbGrid>
+                </div>
+            }
+        </div>
+
+        <!-- Needs Attention -->
+        <div class="section-card">
+            <h3 class="section-title">⚠️ Needs Attention</h3>
+            @if (_attentionTickets.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="empty-icon">🎉</span>
+                    All caught up! No urgent items.
+                </div>
+            }
+            else
+            {
+                <div class="attention-list">
+                    @foreach (var ticket in _attentionTickets.Take(8))
+                    {
+                        <div class="attention-item">
+                            <div class="attention-item-left">
+                                <span class="attention-id">@ticket.Id</span>
+                                <span class="attention-title">@ticket.Title</span>
+                            </div>
+                            <div class="attention-badges">
+                                <span class="priority-badge priority-@ticket.Priority.ToLower().Replace(" ", "")">
+                                    @ticket.Priority
+                                </span>
+                                @if (ticket.IsOverdue)
+                                {
+                                    <span class="status-badge" style="background:#fef2f2;color:#dc2626;border-color:#fecaca;">
+                                        Overdue
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool _loading = true;
+    private int _total, _open, _highPriority, _resolved;
+    private List<Ticket> _recentTickets = new();
+    private List<Ticket> _attentionTickets = new();
+    private List<ChartDataItem> _statusChartData = new();
+    private List<ChartDataItem> _priorityChartData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await TicketSvc.EnsureInitializedAsync();
+        TicketSvc.OnTicketsChanged += OnTicketsChanged;
+        RefreshData();
+        _loading = false;
+    }
+
+    private void OnTicketsChanged()
+    {
+        RefreshData();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshData()
+    {
+        var tickets = TicketSvc.GetAll();
+
+        _total = tickets.Count;
+        _open = tickets.Count(t => t.Status is "New" or "In Progress" or "Waiting");
+        _highPriority = tickets.Count(t => (t.Priority == "High" || t.Priority == "Critical") && t.Status != "Resolved" && t.Status != "Closed");
+        _resolved = tickets.Count(t => t.Status == "Resolved");
+
+        _recentTickets = tickets.OrderByDescending(t => t.CreatedDate).Take(10).ToList();
+
+        _attentionTickets = tickets
+            .Where(t => t.IsOverdue || t.IsUrgent)
+            .OrderByDescending(t => t.Priority == "Critical")
+            .ThenByDescending(t => t.IsOverdue)
+            .Take(8)
+            .ToList();
+
+        _statusChartData = TicketStatuses.All
+            .Select(s => new ChartDataItem { Label = s, Count = tickets.Count(t => t.Status == s) })
+            .ToList();
+
+        _priorityChartData = TicketPriorities.All
+            .Select(p => new ChartDataItem { Label = p, Count = tickets.Count(t => t.Priority == p) })
+            .ToList();
+    }
+
+    public void Dispose()
+    {
+        TicketSvc.OnTicketsChanged -= OnTicketsChanged;
+    }
+}

@@ -1,12 +1,15 @@
-<main class="app-shell">
-    <section class="starter-panel">
-        <p class="eyebrow">Ignite UI for Blazor</p>
-        <h1>Starter application</h1>
-        <p>
-            The package, theme stylesheet, and component registration are ready.
-            Add each Ignite UI component module in <code>Program.cs</code> as you use it.
-        </p>
-
-        <IgbButton Variant="ButtonVariant.Contained">Ignite UI is ready</IgbButton>
-    </section>
-</main>
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Not Found</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div style="text-align:center; padding: 80px 24px;">
+                <h2 style="color: var(--app-primary);">Page Not Found</h2>
+                <p>Sorry, there's nothing at this address.</p>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

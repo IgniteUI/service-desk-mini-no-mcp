@@ -4,16 +4,95 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Ignite UI Blazor Starter</title>
+    <title>Service Desk Mini</title>
     <base href="/" />
     <link href="_content/IgniteUI.Blazor/themes/light/bootstrap.css" rel="stylesheet" />
+    <link href="_content/IgniteUI.Blazor/themes/grid/light/bootstrap.css" rel="stylesheet" />
     <link href="css/app.css" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 </head>
 
 <body>
     <div id="app"></div>
 
     <script src="_framework/blazor.webassembly.js"></script>
+
+    <script>
+        // =============================================
+        // Grid Cell Template: Status Badge
+        // =============================================
+        igRegisterScript("statusCellTemplate", (ctx) => {
+            var html = window.igTemplating.html;
+            const status = ctx.cell.value || '';
+            const clsMap = {
+                'New': 'status-new',
+                'In Progress': 'status-inprogress',
+                'Waiting': 'status-waiting',
+                'Resolved': 'status-resolved',
+                'Closed': 'status-closed'
+            };
+            const cls = clsMap[status] || '';
+            return html`<span class="status-badge ${cls}">${status}</span>`;
+        }, false);
+
+        // =============================================
+        // Grid Cell Template: Priority Badge
+        // =============================================
+        igRegisterScript("priorityCellTemplate", (ctx) => {
+            var html = window.igTemplating.html;
+            const priority = ctx.cell.value || '';
+            const clsMap = {
+                'Low': 'priority-low',
+                'Medium': 'priority-medium',
+                'High': 'priority-high',
+                'Critical': 'priority-critical'
+            };
+            const icons = {
+                'Low': '↓',
+                'Medium': '◆',
+                'High': '↑',
+                'Critical': '⚡'
+            };
+            const cls = clsMap[priority] || '';
+            const icon = icons[priority] || '';
+            return html`<span class="priority-badge ${cls}">${icon} ${priority}</span>`;
+        }, false);
+
+        // =============================================
+        // Grid Cell Template: Row Actions (View/Edit/Delete)
+        // =============================================
+        igRegisterScript("rowActionsTemplate", (ctx) => {
+            var html = window.igTemplating.html;
+            const ticketId = ctx.cell.row.data.Id;
+            return html`
+                <div class="row-actions">
+                    <button class="btn-action btn-view"
+                        @click=${(e) => { e.stopPropagation(); if(window.ticketsPageRef) window.ticketsPageRef.invokeMethodAsync('ViewTicket', ticketId); }}>
+                        👁
+                    </button>
+                    <button class="btn-action btn-edit"
+                        @click=${(e) => { e.stopPropagation(); if(window.ticketsPageRef) window.ticketsPageRef.invokeMethodAsync('EditTicket', ticketId); }}>
+                        ✏️
+                    </button>
+                    <button class="btn-action btn-delete"
+                        @click=${(e) => { e.stopPropagation(); if(window.ticketsPageRef) window.ticketsPageRef.invokeMethodAsync('DeleteTicket', ticketId); }}>
+                        🗑
+                    </button>
+                </div>`;
+        }, false);
+
+        // =============================================
+        // Register DotNet reference from Tickets page
+        // =============================================
+        window.setTicketsPageRef = function (dotNetRef) {
+            window.ticketsPageRef = dotNetRef;
+        };
+
+        window.clearTicketsPageRef = function () {
+            window.ticketsPageRef = null;
+        };
+    </script>
 </body>
 
 </html>

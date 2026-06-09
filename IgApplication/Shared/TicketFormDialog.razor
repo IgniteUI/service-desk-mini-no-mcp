@@ -1,0 +1,196 @@
+<IgbDialog Open="@Open" CloseOnOutsideClick="false">
+    <div slot="title">@(IsEdit ? "Edit Ticket" : "New Ticket")</div>
+
+    <div class="ticket-form">
+        <!-- Title -->
+        <div class="form-row">
+            <IgbInput Label="Title *" @bind-Value="_form.Title" Required="true"></IgbInput>
+            @if (_errors.Contains("Title"))
+            {
+                <span class="field-error">Title is required</span>
+            }
+        </div>
+
+        <!-- Customer + Assignee -->
+        <div class="form-row form-row-2">
+            <div class="form-col">
+                <IgbInput Label="Customer *" @bind-Value="_form.Customer" Required="true"></IgbInput>
+                @if (_errors.Contains("Customer"))
+                {
+                    <span class="field-error">Customer is required</span>
+                }
+            </div>
+            <div class="form-col">
+                <IgbSelect Label="Assignee *" @bind-Value="_form.Assignee">
+                    @foreach (var m in TeamMembers.All)
+                    {
+                        <IgbSelectItem Value="@m">@m</IgbSelectItem>
+                    }
+                </IgbSelect>
+                @if (_errors.Contains("Assignee"))
+                {
+                    <span class="field-error">Assignee is required</span>
+                }
+            </div>
+        </div>
+
+        <!-- Priority + Status -->
+        <div class="form-row form-row-2">
+            <div class="form-col">
+                <IgbSelect Label="Priority *" @bind-Value="_form.Priority">
+                    @foreach (var p in TicketPriorities.All)
+                    {
+                        <IgbSelectItem Value="@p">@p</IgbSelectItem>
+                    }
+                </IgbSelect>
+            </div>
+            <div class="form-col">
+                <IgbSelect Label="Status *" @bind-Value="_form.Status">
+                    @foreach (var s in TicketStatuses.All)
+                    {
+                        <IgbSelectItem Value="@s">@s</IgbSelectItem>
+                    }
+                </IgbSelect>
+            </div>
+        </div>
+
+        <!-- Created Date + Due Date -->
+        <div class="form-row form-row-2">
+            <div class="form-col">
+                <IgbInput Label="Created Date * (YYYY-MM-DD)" @bind-Value="_form.CreatedDateStr"></IgbInput>
+                @if (_errors.Contains("CreatedDate"))
+                {
+                    <span class="field-error">Enter a valid date (YYYY-MM-DD)</span>
+                }
+            </div>
+            <div class="form-col">
+                <IgbInput Label="Due Date * (YYYY-MM-DD)" @bind-Value="_form.DueDateStr"></IgbInput>
+                @if (_errors.Contains("DueDateRequired"))
+                {
+                    <span class="field-error">Due date is required</span>
+                }
+                else if (_errors.Contains("DueDateInvalid"))
+                {
+                    <span class="field-error">Due date cannot be before created date</span>
+                }
+            </div>
+        </div>
+
+        <!-- Description -->
+        <div class="form-row">
+            <IgbInput Label="Description" @bind-Value="_form.Description"></IgbInput>
+        </div>
+    </div>
+
+    <div slot="footer" class="dialog-footer">
+        <IgbButton Variant="ButtonVariant.Flat" @onclick="Cancel">Cancel</IgbButton>
+        <IgbButton Variant="ButtonVariant.Contained" @onclick="SaveAsync">
+            @(IsEdit ? "Update" : "Create")
+        </IgbButton>
+    </div>
+</IgbDialog>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public EventCallback<bool> OpenChanged { get; set; }
+    [Parameter] public Ticket? EditTicket { get; set; }
+    [Parameter] public EventCallback<Ticket> OnSaved { get; set; }
+
+    private TicketFormModel _form = new();
+    private HashSet<string> _errors = new();
+    private bool IsEdit => EditTicket != null;
+
+    protected override void OnParametersSet()
+    {
+        if (!Open) return;
+
+        _errors.Clear();
+
+        if (EditTicket != null)
+        {
+            _form = new TicketFormModel
+            {
+                Title = EditTicket.Title,
+                Customer = EditTicket.Customer,
+                Assignee = EditTicket.Assignee,
+                Priority = EditTicket.Priority,
+                Status = EditTicket.Status,
+                CreatedDateStr = EditTicket.CreatedDate.ToString("yyyy-MM-dd"),
+                DueDateStr = EditTicket.DueDate.ToString("yyyy-MM-dd"),
+                Description = EditTicket.Description
+            };
+        }
+        else
+        {
+            _form = new TicketFormModel();
+        }
+    }
+
+    private bool ValidateForm()
+    {
+        _errors.Clear();
+
+        if (string.IsNullOrWhiteSpace(_form.Title)) _errors.Add("Title");
+        if (string.IsNullOrWhiteSpace(_form.Customer)) _errors.Add("Customer");
+        if (string.IsNullOrWhiteSpace(_form.Assignee)) _errors.Add("Assignee");
+
+        if (!DateTime.TryParse(_form.CreatedDateStr, out var created))
+            _errors.Add("CreatedDate");
+
+        if (string.IsNullOrWhiteSpace(_form.DueDateStr))
+        {
+            _errors.Add("DueDateRequired");
+        }
+        else if (!DateTime.TryParse(_form.DueDateStr, out var due))
+        {
+            _errors.Add("DueDateRequired");
+        }
+        else if (!_errors.Contains("CreatedDate") && due.Date < created.Date)
+        {
+            _errors.Add("DueDateInvalid");
+        }
+
+        return _errors.Count == 0;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (!ValidateForm()) return;
+
+        DateTime.TryParse(_form.CreatedDateStr, out var createdDate);
+        DateTime.TryParse(_form.DueDateStr, out var dueDate);
+
+        var ticket = new Ticket
+        {
+            Id = EditTicket?.Id ?? "",
+            Title = _form.Title.Trim(),
+            Customer = _form.Customer.Trim(),
+            Assignee = _form.Assignee,
+            Priority = _form.Priority,
+            Status = _form.Status,
+            CreatedDate = createdDate,
+            DueDate = dueDate,
+            Description = _form.Description.Trim()
+        };
+
+        await OnSaved.InvokeAsync(ticket);
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private async Task Cancel()
+    {
+        await OpenChanged.InvokeAsync(false);
+    }
+
+    private class TicketFormModel
+    {
+        public string Title { get; set; } = "";
+        public string Customer { get; set; } = "";
+        public string Assignee { get; set; } = "Alice Johnson";
+        public string Priority { get; set; } = "Medium";
+        public string Status { get; set; } = "New";
+        public string CreatedDateStr { get; set; } = DateTime.Today.ToString("yyyy-MM-dd");
+        public string DueDateStr { get; set; } = DateTime.Today.AddDays(7).ToString("yyyy-MM-dd");
+        public string Description { get; set; } = "";
+    }
+}
